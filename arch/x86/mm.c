@@ -826,12 +826,17 @@ void p2m_chk_pfn(unsigned long pfn)
     }
 }
 
+static unsigned long _max_pfn;
+static unsigned long *l3_list;
+static unsigned long *l2_list_pages[P2M_ENTRIES];
+
 void arch_init_p2m(unsigned long max_pfn)
 {
-    unsigned long *l2_list = NULL, *l3_list;
+    unsigned long *l2_list = NULL;
     unsigned long pfn;
     
     p2m_chk_pfn(max_pfn - 1);
+    _max_pfn = max_pfn;
     l3_list = (unsigned long *)alloc_page(); 
     for ( pfn = 0; pfn < max_pfn; pfn += P2M_ENTRIES )
     {
@@ -841,12 +846,61 @@ void arch_init_p2m(unsigned long max_pfn)
             l3_list[L3_P2M_IDX(pfn)] = virt_to_mfn(l2_list);
         }
         l2_list[L2_P2M_IDX(pfn)] = virt_to_mfn(phys_to_machine_mapping + pfn);
+        l2_list_pages[(pfn >> L2_P2M_SHIFT)] = l2_list;
     }
     HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list = 
         virt_to_mfn(l3_list);
     HYPERVISOR_shared_info->arch.max_pfn = max_pfn;
 
     arch_remap_p2m(max_pfn);
+}
+
+void arch_rebuild_p2m(void)
+{
+    unsigned long pfn;
+    unsigned long *l2_list = NULL;
+
+    for ( pfn=0; pfn<_max_pfn; pfn += P2M_ENTRIES )
+    {
+        if ( !(pfn % (P2M_ENTRIES * P2M_ENTRIES)) )
+        {
+            l2_list = l2_list_pages[pfn >> L2_P2M_SHIFT];
+            l3_list[pfn >> L2_P2M_SHIFT] = virt_to_mfn(l2_list);
+        }
+
+        l2_list[(pfn >> L1_P2M_SHIFT) & P2M_MASK] =
+            virt_to_mfn(&(phys_to_machine_mapping[pfn]));
+    }
+    HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list =
+        virt_to_mfn(l3_list);
+    HYPERVISOR_shared_info->arch.max_pfn = _max_pfn;
+}
+
+void arch_mm_pre_suspend(void)
+{
+    int rc;
+
+    if ( (rc = HYPERVISOR_update_va_mapping(0,
+            __pte((mfn_zero<<L1_PAGETABLE_SHIFT)| L1_PROT), UVMF_INVLPG)) ) {
+        printk("Unable to remap NULL page. rc=%d\n", rc);
+        do_exit();
+    }
+}
+
+void arch_mm_post_suspend(int canceled)
+{
+    int rc;
+    pte_t nullpte = { };
+
+    /* Remap first page as the CoW zero page */
+    mfn_zero = virt_to_mfn((unsigned long) &_text);
+    if ( (rc = HYPERVISOR_update_va_mapping(0, nullpte, UVMF_INVLPG)) ) {
+        printk("Unable to unmap NULL page. rc=%d\n", rc);
+        do_exit();
+    }
+
+    if (!canceled)
+        arch_rebuild_p2m();
 }
 #endif
 
@@ -923,4 +977,14 @@ unsigned long map_frame_virt(unsigned long mfn)
         return 0;
 
     return addr;
+}
+
+void arch_mm_pre_suspend(void)
+{
+
+}
+
+void arch_mm_post_suspend(int canceled)
+{
+
 }

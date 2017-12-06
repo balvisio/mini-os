@@ -167,3 +167,15 @@ void init_console(void)
     /* This is also required to notify the daemon */
     printk("done.\n");
 }
+
+void suspend_console(void)
+{
+    console_initialised = 0;
+    //xencons_ring_fini(NULL);
+}
+
+void resume_console(void)
+{
+   // xencons_ring_resume(NULL);
+    console_initialised = 1;
+}

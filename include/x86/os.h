@@ -68,6 +68,8 @@ extern shared_info_t *HYPERVISOR_shared_info;
 void trap_init(void);
 void trap_fini(void);
 
+void arch_pre_suspend(void);
+void arch_post_suspend(int canceled);
 void arch_fini(void);
 
 

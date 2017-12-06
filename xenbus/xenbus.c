@@ -129,6 +129,20 @@ void xenbus_wait_for_watch(xenbus_event_queue *queue)
         printk("unexpected path returned by watch\n");
 }
 
+void xenbus_release_wait_for_watch(xenbus_event_queue *queue)
+{
+    struct xenbus_event *event = malloc(sizeof(*event) + 2);
+    event->path = (char*)(event + 1);
+    event->token = event->path + 1;
+
+    event->path = '\0';
+    event->token = '\0';
+
+    event->next = *queue;
+    *queue = event;
+    wake_up(&xenbus_watch_queue);
+}
+
 char* xenbus_wait_for_value(const char* path, const char* value, xenbus_event_queue *queue)
 {
     if (!queue)
@@ -370,6 +384,51 @@ void init_xenbus(void)
 
 void fini_xenbus(void)
 {
+}
+
+void suspend_xenbus(void)
+{
+    /* Check for live requests and wait until they finish */
+ /*   while (1)
+    {
+        spin_lock(&req_lock);
+        if (nr_live_reqs == 0)
+            break;
+        spin_unlock(&req_lock);
+        wait_event(req_wq, (nr_live_reqs == 0));
+    }
+
+    mask_evtchn(start_info.store_evtchn);
+    xenstore_buf = NULL;
+    spin_unlock(&req_lock);*/
+}
+
+void resume_xenbus(int canceled)
+{
+ /*   char *msg;
+    struct watch *watch;
+    struct write_req req[2];
+    struct xsd_sockmsg *rep;
+
+    xenstore_buf = mfn_to_virt(start_info.store_mfn);
+    unmask_evtchn(start_info.store_evtchn);
+
+    if (!canceled) {
+        for (watch = watches; watch; watch = watch->next) {
+            req[0].data = watch->path;
+            req[0].len = strlen(watch->path) + 1;
+            req[1].data = watch->token;
+            req[1].len = strlen(watch->token) + 1;
+
+            rep = xenbus_msg_reply(XS_WATCH, XBT_NIL, req, ARRAY_SIZE(req));
+            msg = errmsg(rep);
+            if (msg)
+                xprintk("error on XS_WATCH: %s\n", msg);
+            free(rep);
+        }
+    }
+
+    notify_remote_via_evtchn(start_info.store_evtchn);*/
 }
 
 /* Send data to xenbus.  This can block.  All of the requests are seen

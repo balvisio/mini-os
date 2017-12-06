@@ -79,6 +79,8 @@ void get_console(void *p);
 void init_console(void);
 void console_print(struct consfront_dev *dev, char *data, int length);
 void fini_console(struct consfront_dev *dev);
+void suspend_console(void);
+void resume_console(void);
 
 /* Low level functions defined in xencons_ring.c */
 extern struct wait_queue_head console_queue;
