@@ -171,6 +171,10 @@ void start_kernel(void* par)
 
 void pre_suspend(void)
 {
+#ifdef CONFIG_XENBUS
+    suspend_xenbus();
+#endif
+
     local_irq_disable();
 
     suspend_gnttab();
@@ -191,6 +195,10 @@ void post_suspend(int canceled)
     resume_gnttab();
 
     local_irq_enable();
+
+#ifdef CONFIG_XENBUS
+    resume_xenbus(canceled);
+#endif
 }
 
 void stop_kernel(void)
