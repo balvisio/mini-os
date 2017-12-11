@@ -19,6 +19,8 @@ DECLARE_WAIT_QUEUE_HEAD(console_queue);
 static struct xencons_interface *console_ring;
 uint32_t console_evtchn;
 
+static struct consfront_dev* resume_xen_console(struct consfront_dev* dev);
+
 #ifdef CONFIG_PARAVIRT
 void get_console(void *p)
 {
@@ -32,10 +34,12 @@ void get_console(void *p)
 {
     uint64_t v = -1;
 
-    hvm_get_parameter(HVM_PARAM_CONSOLE_EVTCHN, &v);
+    if (hvm_get_parameter(HVM_PARAM_CONSOLE_EVTCHN, &v))
+    	BUG();
     console_evtchn = v;
 
-    hvm_get_parameter(HVM_PARAM_CONSOLE_PFN, &v);
+    if (hvm_get_parameter(HVM_PARAM_CONSOLE_PFN, &v))
+    	BUG();
     console_ring = (struct xencons_interface *)map_frame_virt(v);
 }
 #endif
@@ -89,9 +93,7 @@ int xencons_ring_send(struct consfront_dev *dev, const char *data, unsigned len)
     notify_daemon(dev);
 
     return sent;
-}	
-
-
+}
 
 void console_handle_input(evtchn_port_t port, struct pt_regs *regs, void *data)
 {
@@ -177,7 +179,6 @@ int xencons_ring_recv(struct consfront_dev *dev, char *data, unsigned len)
 
 struct consfront_dev *xencons_ring_init(void)
 {
-	int err;
 	struct consfront_dev *dev;
 
 	if (!console_evtchn)
@@ -193,16 +194,24 @@ struct consfront_dev *xencons_ring_init(void)
 #ifdef HAVE_LIBC
 	dev->fd = -1;
 #endif
+
+	return resume_xen_console(dev);
+}
+
+static struct consfront_dev* resume_xen_console(struct consfront_dev* dev)
+{
+	int err;
+
 	dev->evtchn = console_evtchn;
 	dev->ring = xencons_interface();
 
 	err = bind_evtchn(dev->evtchn, console_handle_input, dev);
 	if (err <= 0) {
 		printk("XEN console request chn bind failed %i\n", err);
-                free(dev);
+        free(dev);
 		return NULL;
 	}
-        unmask_evtchn(dev->evtchn);
+    unmask_evtchn(dev->evtchn);
 
 	/* In case we have in-flight data after save/restore... */
 	notify_daemon(dev);
@@ -210,8 +219,20 @@ struct consfront_dev *xencons_ring_init(void)
 	return dev;
 }
 
-void xencons_resume(void)
+void xencons_ring_fini(struct consfront_dev* dev)
 {
-	(void)xencons_ring_init();
+	if (dev)
+    	mask_evtchn(dev->evtchn);
 }
 
+void xencons_ring_resume(struct consfront_dev* dev)
+{
+	if (dev) {
+#if CONFIG_PARAVIRT
+		get_console(&start_info);
+#else
+		get_console(0);
+#endif
+		resume_xen_console(dev);
+	}
+}
