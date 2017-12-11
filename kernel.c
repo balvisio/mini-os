@@ -120,11 +120,33 @@ static void shutdown_thread(void *p)
 }
 #endif
 
+static void call_main_1(void *p)
+{
+    int i = 0;
+    while(1){
+        printk("call 1 main %d\n", i);
+        i++;
+        msleep(2000);
+    }
+    return;
+}
 
+static void call_main_2(void *p)
+{
+    int i = 0;
+    while(1){
+        printk("call 2 main %d\n", i);
+        i++;
+        msleep(2000);
+    }
+    return;
+}
 /* This should be overridden by the application we are linked against. */
 __attribute__((weak)) int app_main(void *p)
 {
     printk("kernel.c: dummy main: par=%p\n", p);
+    create_thread("main_1", call_main_1, p);
+    create_thread("main_2", call_main_2, p);
     return 0;
 }
 
