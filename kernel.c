@@ -171,6 +171,10 @@ void start_kernel(void* par)
 
 void pre_suspend(void)
 {
+#ifdef CONFIG_NETFRONT
+    suspend_netfront();
+#endif
+
 #ifdef CONFIG_XENBUS
     suspend_xenbus();
 #endif
@@ -198,6 +202,10 @@ void post_suspend(int canceled)
 
 #ifdef CONFIG_XENBUS
     resume_xenbus(canceled);
+#endif
+
+#ifdef CONFIG_NETFRONT
+    resume_netfront();
 #endif
 }
 
