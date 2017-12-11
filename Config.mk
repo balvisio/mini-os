@@ -46,7 +46,7 @@ MINIOS_COMPILE_ARCH    ?= $(shell uname -m | sed -e s/i.86/x86_32/ \
                             -e s/armv7.*/arm32/ -e s/armv8.*/arm64/ \
                             -e s/aarch64/arm64/)
 
-MINIOS_TARGET_ARCH     ?= $(MINIOS_COMPILE_ARCH)
+MINIOS_TARGET_ARCH     ?= x86_32
 endif
 
 libc = $(stubdom)
@@ -159,7 +159,7 @@ endif
 
 # Configuration defaults
 ifeq ($(TARGET_ARCH_FAM),x86)
-CONFIG_PARAVIRT ?= y
+CONFIG_PARAVIRT ?= n
 else
 CONFIG_PARAVIRT ?= n
 endif
