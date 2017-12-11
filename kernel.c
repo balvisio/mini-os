@@ -120,10 +120,14 @@ void start_kernel(void* par)
 void pre_suspend(void)
 {
     local_irq_disable();
+
+    suspend_time();
 }
 
 void post_suspend(int canceled)
 {
+    resume_time();
+
     local_irq_enable();
 }
 
