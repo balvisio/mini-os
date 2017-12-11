@@ -93,6 +93,18 @@ shared_info_t *map_shared_info(void *p)
     return (shared_info_t *)shared_info;
 }
 
+void unmap_shared_info(void)
+{
+    int rc;
+
+    if ( (rc = HYPERVISOR_update_va_mapping((unsigned long)shared_info,
+            __pte((virt_to_mfn(shared_info)<<L1_PAGETABLE_SHIFT)| L1_PROT), UVMF_INVLPG)) )
+    {
+        printk("Failed to unmap shared_info page!! rc=%d\n", rc);
+        do_exit();
+    }
+}
+
 static void get_cmdline(void *p)
 {
     start_info_t *si = p;
