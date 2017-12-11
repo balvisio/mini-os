@@ -270,11 +270,16 @@ void arch_post_suspend(int canceled)
         BUG();
     start_info_ptr->console.domU.mfn = pfn_to_mfn(console_v);
 #endif
+    printk("MiniOS post suspend before map shared info ...\n");
 
     HYPERVISOR_shared_info = map_shared_info((void*) start_info_ptr);
+
+    printk("MiniOS post suspend before after shared info ...\n");
 #ifndef CONFIG_PARAVIRT
     xen_callback_vector();
 #endif
+    printk("MiniOS arch memory post suspend ...\n");
+
     arch_mm_post_suspend(canceled);
 }
 

@@ -64,16 +64,19 @@ __attribute__((weak)) void app_shutdown(unsigned reason)
         struct sched_shutdown sched_shutdown = { .reason = reason };
         HYPERVISOR_sched_op(SCHEDOP_shutdown, &sched_shutdown);
     }
+    printk("Returning from app_shutdown\n");
 }
 
 static void shutdown_thread(void *p)
 {
     char *shutdown, *err;
     unsigned int shutdown_reason;
-
+    int counter = 0;
     xenbus_watch_path_token(XBT_NIL, path, token, &events);
 
     for ( ;; ) {
+        printk("Watching for xenbus %d\n", counter);
+        counter++;
         xenbus_wait_for_watch(&events);
         if ((err = xenbus_read(XBT_NIL, path, &shutdown))) {
             free(err);
@@ -181,7 +184,12 @@ void kernel_suspend(void)
      */
     rc = HYPERVISOR_suspend(virt_to_mfn(start_info_ptr));
 
+    printk("MiniOS returned from suspend ...\n");
+
+    printk("MiniOS arch post suspend ...\n");
     arch_post_suspend(rc);
+
+    printk("MiniOS post suspend ...\n");
     post_suspend(rc);
 
     if (rc) {
