@@ -848,6 +848,20 @@ void arch_init_p2m(unsigned long max_pfn)
 
     arch_remap_p2m(max_pfn);
 }
+
+void arch_mm_pre_suspend(void)
+{
+    //TODO: Canonicalize pagetables
+}
+
+void arch_mm_post_suspend(int canceled)
+{
+    //TODO: Locate pagetables and 'uncanonicalize' them
+}
+#else
+void arch_mm_pre_suspend(void){ }
+
+void arch_mm_post_suspend(int canceled){ }
 #endif
 
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p)
