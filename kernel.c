@@ -50,6 +50,11 @@
 uint8_t xen_features[XENFEAT_NR_SUBMAPS * 32];
 char cmdline[MAX_CMDLINE_SIZE];
 
+/*
+ * This pointer holds a reference to the copy of the start_info struct.
+ */
+static start_info_t *start_info_ptr;
+
 void setup_xen_features(void)
 {
     xen_feature_info_t fi;
@@ -72,7 +77,11 @@ __attribute__((weak)) void app_shutdown(unsigned reason)
 {
     struct sched_shutdown sched_shutdown = { .reason = reason };
     printk("Shutdown requested: %d\n", reason);
-    HYPERVISOR_sched_op(SCHEDOP_shutdown, &sched_shutdown);
+    if (reason == SHUTDOWN_suspend) {
+        suspend_kernel();
+    } else {
+        HYPERVISOR_sched_op(SCHEDOP_shutdown, &sched_shutdown);
+    }
 }
 
 static void shutdown_thread(void *p)
@@ -83,28 +92,31 @@ static void shutdown_thread(void *p)
     char *shutdown = NULL, *err;
     unsigned int shutdown_reason;
     xenbus_watch_path_token(XBT_NIL, path, token, &events);
-    while ((err = xenbus_read(XBT_NIL, path, &shutdown)) != NULL || !strcmp(shutdown, ""))
-    {
-        free(err);
-        free(shutdown);
-        shutdown = NULL;
-        xenbus_wait_for_watch(&events);
-    }
-    err = xenbus_unwatch_path_token(XBT_NIL, path, token);
-    free(err);
-    err = xenbus_write(XBT_NIL, path, "");
-    free(err);
-    printk("Shutting down (%s)\n", shutdown);
 
-    if (!strcmp(shutdown, "poweroff"))
-        shutdown_reason = SHUTDOWN_poweroff;
-    else if (!strcmp(shutdown, "reboot"))
-        shutdown_reason = SHUTDOWN_reboot;
-    else
-        /* Unknown */
-        shutdown_reason = SHUTDOWN_crash;
-    app_shutdown(shutdown_reason);
-    free(shutdown);
+    while (1) {
+        while ((err = xenbus_read(XBT_NIL, path, &shutdown)) != NULL ||
+                !strcmp(shutdown, "")) {
+            free(err);
+            free(shutdown);
+            shutdown = NULL;
+            xenbus_wait_for_watch(&events);
+        }
+        err = xenbus_write(XBT_NIL, path, "");
+        free(err);
+        printk("Shutting down (%s)\n", shutdown);
+
+        if (!strcmp(shutdown, "poweroff"))
+            shutdown_reason = SHUTDOWN_poweroff;
+        else if (!strcmp(shutdown, "reboot"))
+            shutdown_reason = SHUTDOWN_reboot;
+        else if (!strcmp(shutdown, "suspend"))
+            shutdown_reason = SHUTDOWN_suspend;
+        else
+            /* Unknown */
+            shutdown_reason = SHUTDOWN_crash;
+        app_shutdown(shutdown_reason);
+        free(shutdown);
+    }
 }
 #endif
 
@@ -116,7 +128,7 @@ __attribute__((weak)) int app_main(void *p)
     return 0;
 }
 
-void start_kernel(void)
+void start_kernel(void* par)
 {
     /* Set up events. */
     init_events();
@@ -153,6 +165,8 @@ void start_kernel(void)
 
     /* Everything initialised, start idle thread */
     run_idle_thread();
+
+    start_info_ptr = (start_info_t *)par;
 }
 
 void pre_suspend(void)
@@ -188,6 +202,21 @@ void stop_kernel(void)
 
     /* Reset arch details */
     arch_fini();
+}
+
+void suspend_kernel(void)
+{
+    int rc;
+
+    printk("Suspend called!\n");
+
+    pre_suspend();
+    arch_pre_suspend();
+
+    rc = HYPERVISOR_suspend(virt_to_mfn(start_info_ptr));
+
+    arch_post_suspend(rc);
+    post_suspend(rc);
 }
 
 /*
