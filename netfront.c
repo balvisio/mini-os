@@ -29,6 +29,7 @@ DECLARE_WAIT_QUEUE_HEAD(netfront_queue);
 #define NET_RX_RING_SIZE __CONST_RING_SIZE(netif_rx, PAGE_SIZE)
 #define GRANT_INVALID_REF 0
 
+#define TEST 1
 
 struct net_buffer {
     void* page;
@@ -63,8 +64,12 @@ struct netfront_dev {
     size_t rlen;
 #endif
 
+#if (TEST == 1)
     void (*netif_rx)(unsigned char* data, int len, void* arg);
     void *netif_rx_arg;
+#else
+    void (*netif_rx)(unsigned char* data, int len);
+#endif
 };
 
 struct netfront_dev_list {
@@ -80,9 +85,11 @@ struct netfront_dev_list {
 static struct netfront_dev_list *dev_list = NULL;
 
 void init_rx_buffers(struct netfront_dev *dev);
+#if (TEST == 1)
 static struct netfront_dev *_init_netfront(struct netfront_dev *dev,
                                            unsigned char rawmac[6],
                                            char **ip);
+#endif
 static void _shutdown_netfront(struct netfront_dev *dev);
 void netfront_set_rx_handler(struct netfront_dev *dev,
                              void (*thenetif_rx)(unsigned char *data, int len,
@@ -296,6 +303,7 @@ static void free_netfront(struct netfront_dev *dev)
     free(dev);
 }
 
+#if (TEST == 1)
 struct netfront_dev *init_netfront(char *_nodename,
                                    void (*thenetif_rx)(unsigned char* data,
                                                        int len, void* arg),
@@ -547,6 +555,203 @@ error:
     free_netfront(dev);
     return NULL;
 }
+#else
+struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned char* data, int len), unsigned char rawmac[6], char **ip)
+{
+    xenbus_transaction_t xbt;
+    char* err;
+    char* message=NULL;
+    struct netif_tx_sring *txs;
+    struct netif_rx_sring *rxs;
+    int retry=0;
+    int i;
+    char* msg = NULL;
+    char nodename[256];
+    char path[256];
+    struct netfront_dev *dev;
+    static int netfrontends = 0;
+
+    if (!_nodename)
+        snprintf(nodename, sizeof(nodename), "device/vif/%d", netfrontends);
+    else {
+        strncpy(nodename, _nodename, sizeof(nodename) - 1);
+        nodename[sizeof(nodename) - 1] = 0;
+    }
+    netfrontends++;
+
+    if (!thenetif_rx)
+	thenetif_rx = netif_rx;
+
+    printk("************************ NETFRONT for %s **********\n\n\n", nodename);
+
+    dev = malloc(sizeof(*dev));
+    memset(dev, 0, sizeof(*dev));
+    dev->nodename = strdup(nodename);
+#ifdef HAVE_LIBC
+    dev->fd = -1;
+#endif
+
+    printk("net TX ring size %lu\n", (unsigned long) NET_TX_RING_SIZE);
+    printk("net RX ring size %lu\n", (unsigned long) NET_RX_RING_SIZE);
+    init_SEMAPHORE(&dev->tx_sem, NET_TX_RING_SIZE);
+    for(i=0;i<NET_TX_RING_SIZE;i++)
+    {
+	add_id_to_freelist(i,dev->tx_freelist);
+        dev->tx_buffers[i].page = NULL;
+    }
+
+    for(i=0;i<NET_RX_RING_SIZE;i++)
+    {
+	/* TODO: that's a lot of memory */
+        dev->rx_buffers[i].page = (char*)alloc_page();
+    }
+
+    snprintf(path, sizeof(path), "%s/backend-id", nodename);
+    dev->dom = xenbus_read_integer(path);
+#ifdef HAVE_LIBC
+    if (thenetif_rx == NETIF_SELECT_RX)
+        evtchn_alloc_unbound(dev->dom, netfront_select_handler, dev, &dev->evtchn);
+    else
+#endif
+        evtchn_alloc_unbound(dev->dom, netfront_handler, dev, &dev->evtchn);
+
+    txs = (struct netif_tx_sring *) alloc_page();
+    rxs = (struct netif_rx_sring *) alloc_page();
+    memset(txs,0,PAGE_SIZE);
+    memset(rxs,0,PAGE_SIZE);
+
+
+    SHARED_RING_INIT(txs);
+    SHARED_RING_INIT(rxs);
+    FRONT_RING_INIT(&dev->tx, txs, PAGE_SIZE);
+    FRONT_RING_INIT(&dev->rx, rxs, PAGE_SIZE);
+
+    dev->tx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(txs),0);
+    dev->rx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(rxs),0);
+
+    init_rx_buffers(dev);
+
+    dev->netif_rx = thenetif_rx;
+
+    dev->events = NULL;
+
+again:
+    err = xenbus_transaction_start(&xbt);
+    if (err) {
+        printk("starting transaction\n");
+        free(err);
+    }
+
+    err = xenbus_printf(xbt, nodename, "tx-ring-ref","%u",
+                dev->tx_ring_ref);
+    if (err) {
+        message = "writing tx ring-ref";
+        goto abort_transaction;
+    }
+    err = xenbus_printf(xbt, nodename, "rx-ring-ref","%u",
+                dev->rx_ring_ref);
+    if (err) {
+        message = "writing rx ring-ref";
+        goto abort_transaction;
+    }
+    err = xenbus_printf(xbt, nodename,
+                "event-channel", "%u", dev->evtchn);
+    if (err) {
+        message = "writing event-channel";
+        goto abort_transaction;
+    }
+
+    err = xenbus_printf(xbt, nodename, "request-rx-copy", "%u", 1);
+
+    if (err) {
+        message = "writing request-rx-copy";
+        goto abort_transaction;
+    }
+
+    snprintf(path, sizeof(path), "%s/state", nodename);
+    err = xenbus_switch_state(xbt, path, XenbusStateConnected);
+    if (err) {
+        message = "switching state";
+        goto abort_transaction;
+    }
+
+    err = xenbus_transaction_end(xbt, 0, &retry);
+    free(err);
+    if (retry) {
+            goto again;
+        printk("completing transaction\n");
+    }
+
+    goto done;
+
+abort_transaction:
+    free(err);
+    err = xenbus_transaction_end(xbt, 1, &retry);
+    printk("Abort transaction %s\n", message);
+    goto error;
+
+done:
+
+    snprintf(path, sizeof(path), "%s/backend", nodename);
+    msg = xenbus_read(XBT_NIL, path, &dev->backend);
+    snprintf(path, sizeof(path), "%s/mac", nodename);
+    msg = xenbus_read(XBT_NIL, path, &dev->mac);
+
+    if ((dev->backend == NULL) || (dev->mac == NULL)) {
+        printk("%s: backend/mac failed\n", __func__);
+        goto error;
+    }
+
+    printk("backend at %s\n",dev->backend);
+    printk("mac is %s\n",dev->mac);
+
+    {
+        XenbusState state;
+        char path[strlen(dev->backend) + strlen("/state") + 1];
+        snprintf(path, sizeof(path), "%s/state", dev->backend);
+
+        xenbus_watch_path_token(XBT_NIL, path, path, &dev->events);
+
+        err = NULL;
+        state = xenbus_read_integer(path);
+        while (err == NULL && state < XenbusStateConnected)
+            err = xenbus_wait_for_state_change(path, &state, &dev->events);
+        if (state != XenbusStateConnected) {
+            printk("backend not avalable, state=%d\n", state);
+            xenbus_unwatch_path_token(XBT_NIL, path, path);
+            goto error;
+        }
+
+        if (ip) {
+            snprintf(path, sizeof(path), "%s/ip", dev->backend);
+            xenbus_read(XBT_NIL, path, ip);
+        }
+    }
+
+    printk("**************************\n");
+
+    unmask_evtchn(dev->evtchn);
+
+        /* Special conversion specifier 'hh' needed for __ia64__. Without
+           this mini-os panics with 'Unaligned reference'. */
+    if (rawmac)
+	sscanf(dev->mac,"%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+            &rawmac[0],
+            &rawmac[1],
+            &rawmac[2],
+            &rawmac[3],
+            &rawmac[4],
+            &rawmac[5]);
+
+    return dev;
+error:
+    free(msg);
+    free(err);
+    free_netfront(dev);
+    return NULL;
+}
+#endif
+
 
 #ifdef HAVE_LIBC
 int netfront_tap_open(char *nodename) {

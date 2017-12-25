@@ -364,13 +364,17 @@ void start_networking(void)
           ntohl(ipaddr.addr), ntohl(netmask.addr), ntohl(gw.addr));
   
   tprintk("TCP/IP bringup begins.\n");
-  
+
+  tprintk("Before xmalloc\n");
   netif = xmalloc(struct netif);
+  tprintk("Before init\n");
   tcpip_init(tcpip_bringup_finished, netif);
-    
+  tprintk("Before netif_add\n");
   netif_add(netif, &ipaddr, &netmask, &gw, rawmac, 
             netif_netfront_init, ip_input);
+  tprintk("Before set default\n");
   netif_set_default(netif);
+  tprintk("Before set up\n");
   netif_set_up(netif);
 
   down(&tcpip_is_up);
