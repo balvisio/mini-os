@@ -124,7 +124,7 @@ static void call_main_1(void *p)
 {
     int i = 0;
     while(1){
-        printk("call 1 main %d\n", i);
+     //   printk("call 1 main %d\n", i);
         i++;
         msleep(2000);
     }
@@ -135,7 +135,7 @@ static void call_main_2(void *p)
 {
     int i = 0;
     while(1){
-        printk("call 2 main %d\n", i);
+      //  printk("call 2 main %d\n", i);
         i++;
         msleep(2000);
     }

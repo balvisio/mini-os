@@ -54,6 +54,20 @@
    NOTE: you need to enable verbose in xen/Rules.mk for it to work. */
 static struct consfront_dev* xen_console = NULL;
 static int console_initialised = 0;
+static int myint = 666;
+static int* memory_loc = 0;
+
+static int char_to_hex(char c)
+{
+    int y = c;
+    if(y > 47 && y < 58)  //this covers 0-9
+        y = y - 48;
+    else if (y > 64 && y < 71) // this covers A-F
+        y = y - 55;
+    else if (y > 96 && y < 103) // this covers a-f
+        y = y - 87;
+    return y;
+}
 
 __attribute__((weak)) void console_input(char * buf, unsigned len)
 {
@@ -61,8 +75,15 @@ __attribute__((weak)) void console_input(char * buf, unsigned len)
     {
         /* Just repeat what's written */
         buf[len] = '\0';
-        printk("%s", buf);
-        
+        printk("%s\n", buf);
+        printk("Len: %d\n", len);
+
+        if(buf[0] == '\r') {
+            printk("Value at %p is %d", memory_loc, *memory_loc);
+        }else{
+            memory_loc = (int*) ((int) memory_loc * 16 + char_to_hex(buf[0]));
+            printk("Memory loc is now: %p", memory_loc);
+        }
         if(buf[len-1] == '\r')
             printk("\nNo console input handler.\n");
     }
@@ -167,6 +188,7 @@ void init_console(void)
     console_initialised = 1;
     /* This is also required to notify the daemon */
     printk("done.\n");
+    printk("Address of myint: %p\n", &myint);
 }
 
 void suspend_console(void)
