@@ -826,12 +826,18 @@ void p2m_chk_pfn(unsigned long pfn)
     }
 }
 
+static unsigned long _max_pfn;
+static unsigned long *l3_list;
+static unsigned long *l2_list_pages[P2M_ENTRIES];
+
 void arch_init_p2m(unsigned long max_pfn)
 {
-    unsigned long *l2_list = NULL, *l3_list;
+    unsigned long *l2_list = NULL;
     unsigned long pfn;
     
     p2m_chk_pfn(max_pfn - 1);
+    _max_pfn = max_pfn;
+
     l3_list = (unsigned long *)alloc_page(); 
     for ( pfn = 0; pfn < max_pfn; pfn += P2M_ENTRIES )
     {
@@ -839,6 +845,7 @@ void arch_init_p2m(unsigned long max_pfn)
         {
             l2_list = (unsigned long*)alloc_page();
             l3_list[L3_P2M_IDX(pfn)] = virt_to_mfn(l2_list);
+            l2_list_pages[L3_P2M_IDX(pfn)] = l2_list;
         }
         l2_list[L2_P2M_IDX(pfn)] = virt_to_mfn(phys_to_machine_mapping + pfn);
     }
@@ -849,6 +856,27 @@ void arch_init_p2m(unsigned long max_pfn)
     arch_remap_p2m(max_pfn);
 }
 
+void arch_rebuild_p2m(void)
+{
+    unsigned long pfn;
+    unsigned long *l2_list = NULL;
+
+    for ( pfn = 0; pfn < _max_pfn; pfn += P2M_ENTRIES )
+    {
+        if ( !(pfn % (P2M_ENTRIES * P2M_ENTRIES)) )
+        {
+            l2_list = l2_list_pages[pfn >> L2_P2M_SHIFT];
+            l3_list[L3_P2M_IDX(pfn)] = virt_to_mfn(l2_list);
+        }
+
+        l2_list[L2_P2M_IDX(pfn)] =
+            virt_to_mfn(&(phys_to_machine_mapping[pfn]));
+    }
+    HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list =
+        virt_to_mfn(l3_list);
+    HYPERVISOR_shared_info->arch.max_pfn = _max_pfn;
+}
+
 void arch_mm_pre_suspend(void)
 {
     //TODO: Pre suspend arch specific operations
@@ -857,6 +885,8 @@ void arch_mm_pre_suspend(void)
 void arch_mm_post_suspend(int canceled)
 {
     //TODO: Post suspend arch specific operations
+    if ( !canceled )
+        arch_rebuild_p2m();
 }
 #else
 void arch_mm_pre_suspend(void){ }
