@@ -875,16 +875,34 @@ void arch_rebuild_p2m(void)
     HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list =
         virt_to_mfn(l3_list);
     HYPERVISOR_shared_info->arch.max_pfn = _max_pfn;
+
+    arch_remap_p2m(_max_pfn);
 }
 
 void arch_mm_pre_suspend(void)
 {
-    //TODO: Pre suspend arch specific operations
+    int rc;
+
+    if ( (rc = HYPERVISOR_update_va_mapping(0,
+          __pte((((pgentry_t) mfn_zero) << L1_PAGETABLE_SHIFT) | L1_PROT),
+          UVMF_INVLPG)) ) {
+        printk("Unable to remap NULL page. rc=%d\n", rc);
+        do_exit();
+    }
 }
 
 void arch_mm_post_suspend(int canceled)
 {
-    //TODO: Post suspend arch specific operations
+    int rc;
+    pte_t nullpte = { };
+
+    /* Remap first page as the CoW zero page */
+    mfn_zero = virt_to_mfn((unsigned long) &_text);
+    if ( (rc = HYPERVISOR_update_va_mapping(0, nullpte, UVMF_INVLPG)) ) {
+        printk("Unable to unmap NULL page. rc=%d\n", rc);
+        do_exit();
+    }
+
     if ( !canceled )
         arch_rebuild_p2m();
 }

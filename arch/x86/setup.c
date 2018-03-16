@@ -272,6 +272,7 @@ void arch_post_suspend(int canceled)
 #endif
 
     HYPERVISOR_shared_info = map_shared_info((void*) start_info_ptr);
+
 #ifndef CONFIG_PARAVIRT
     xen_callback_vector();
 #endif
