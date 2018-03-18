@@ -226,6 +226,8 @@ arch_init(void *par)
 
 void arch_pre_suspend(void)
 {
+    arch_mm_pre_suspend();
+
 #ifdef CONFIG_PARAVIRT
    /* Replace xenstore and console mfns with the correspondent pfns */
     start_info_ptr->store_mfn =
@@ -245,8 +247,6 @@ void arch_pre_suspend(void)
     start_info_ptr->console.domU.mfn = console_v;
 #endif
     unmap_shared_info();
-
-    arch_mm_pre_suspend();
 }
 
 void arch_post_suspend(int canceled)
