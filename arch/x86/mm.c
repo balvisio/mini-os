@@ -806,6 +806,7 @@ static void clear_bootstrap(void)
     /* Use first page as the CoW zero page */
     memset(&_text, 0, PAGE_SIZE);
     mfn_zero = virt_to_mfn((unsigned long) &_text);
+    printk("mfn_zero is: 0x%lx\n", mfn_zero);
 #ifdef CONFIG_PARAVIRT
     if ( (rc = HYPERVISOR_update_va_mapping(0, nullpte, UVMF_INVLPG)) )
         printk("Unable to unmap NULL page. rc=%d\n", rc);
@@ -883,6 +884,7 @@ void arch_mm_pre_suspend(void)
 {
     int rc;
 
+    printk("Before suspend mfn_zero: 0x%lx\n", mfn_zero);
     if ( (rc = HYPERVISOR_update_va_mapping(0,
           __pte((((pgentry_t) mfn_zero) << L1_PAGETABLE_SHIFT) | L1_PROT),
           UVMF_INVLPG)) ) {
@@ -898,6 +900,7 @@ void arch_mm_post_suspend(int canceled)
 
     /* Remap first page as the CoW zero page */
     mfn_zero = virt_to_mfn((unsigned long) &_text);
+    printk("After suspend mfn_zero: 0x%lx\n", mfn_zero);
     if ( (rc = HYPERVISOR_update_va_mapping(0, nullpte, UVMF_INVLPG)) ) {
         printk("Unable to unmap NULL page. rc=%d\n", rc);
         do_exit();

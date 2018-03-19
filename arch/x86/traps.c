@@ -148,7 +148,12 @@ static int handle_cow(unsigned long addr) {
 	    return 0;
 	/* Only support CoW for the zero page.  */
 	if (PHYS_PFN(page) != mfn_zero)
+	{
 	    return 0;
+	} else
+	{
+	    printk("Tried to write to address: 0x%lu in page: %llx\n", addr, page);
+	}
 
 	new_page = alloc_pages(0);
 	memset((void*) new_page, 0, PAGE_SIZE);

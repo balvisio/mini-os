@@ -11,4 +11,7 @@ void do_exit(void) __attribute__((noreturn));
 void arch_do_exit(void);
 void stop_kernel(void);
 
+extern struct thread* t1;
+extern struct thread* t2;
+
 #endif /* _KERNEL_H_ */

@@ -49,6 +49,7 @@
 #include <fcntl.h>
 #include <xen/features.h>
 #include <xen/version.h>
+#include <mini-os/lib.h>
 
 uint8_t xen_features[XENFEAT_NR_SUBMAPS * 32];
 char cmdline[MAX_CMDLINE_SIZE];
@@ -69,11 +70,47 @@ void setup_xen_features(void)
     }
 }
 
+char test_stack[3 * PAGE_SIZE];
 
+static void call_main_3(void *p)
+{
+    printk("My pointer: %p\n", test_stack);
+    do_map_zero((unsigned long) &test_stack, 3 * PAGE_SIZE);
+    int* intp = (int*) test_stack;
+    *intp = 7;
+}
+
+static void call_main_1(void *p)
+{
+    int i = 0;
+    while(1){
+        printk("call 1 main %d\n", i);
+        i++;
+        msleep(2000);
+    }
+    return;
+}
+
+static void call_main_2(void *p)
+{
+    int i = 0;
+    while(1){
+        printk("call 2 main %d\n", i);
+        i++;
+        msleep(2000);
+    }
+    return;
+}
+struct thread* t1;
+struct thread* t2;
+struct thread* t3;
 /* This should be overridden by the application we are linked against. */
 __attribute__((weak)) int app_main(void *p)
 {
     printk("kernel.c: dummy main: par=%p\n", p);
+    t1 = create_thread("main_1", call_main_1, p);
+    t2 = create_thread("main_2", call_main_2, p);
+    t3 = create_thread("main_3", call_main_3, p);
     return 0;
 }
 
